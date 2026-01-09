@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Opinion.trade Bot Dashboard</title>
+    <!-- Tabler CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/css/tabler.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@2.47.0/tabler-icons.min.css">
+    <style>
+        :root {
+            --tblr-primary: #f76707;
+            --tblr-primary-rgb: 247, 103, 7;
+        }
+
+        .navbar-brand-image {
+            height: 32px;
+        }
+
+        .nav-link-icon {
+            width: 24px;
+            height: 24px;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .status-dot.running {
+            background: var(--tblr-success);
+        }
+
+        .status-dot.stopped {
+            background: var(--tblr-danger);
+        }
+
+        .status-dot.pending {
+            background: var(--tblr-warning);
+        }
+
+        .orderbook-table {
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .orderbook-table td {
+            padding: 2px 8px !important;
+        }
+
+        .orderbook-table .bid {
+            color: var(--tblr-success);
+            font-weight: 600;
+        }
+
+        .orderbook-table .ask {
+            color: var(--tblr-danger);
+            font-weight: 600;
+        }
+
+        .logs-container {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 13px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            color: #a0aec0;
+            white-space: pre-wrap;
+        }
+
+        .opacity-12 {
+            opacity: 0.12;
+        }
+    </style>
+</head>
+
+<body class="layout-fluid">
+    <div class="page">
+        <!-- Sidebar -->
+        <aside class="navbar navbar-vertical navbar-expand-lg" data-bs-theme="dark">
+            <div class="container-fluid">
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#sidebar-menu">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+                <h1 class="navbar-brand navbar-brand-autodark">
+                    <a href="#">
+                        <img src="/static/opinion-logo.png" alt="Logo" class="" style="height: 35px;">
+
+                    </a>
+                </h1>
+                <div class="collapse navbar-collapse" id="sidebar-menu">
+                    <ul class="navbar-nav pt-lg-3">
+                        <li class="nav-item">
+                            <a class="nav-link active" href="#" data-page="dashboard">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-dashboard"></i>
+                                </span>
+                                <span class="nav-link-title">Dashboard</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="new-task">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-plus"></i>
+                                </span>
+                                <span class="nav-link-title">New Task</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="tasks">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-player-play"></i>
+                                </span>
+                                <span class="nav-link-title">Tasks</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="trades">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-arrows-exchange"></i>
+                                </span>
+                                <span class="nav-link-title">Trades</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="settings">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-settings"></i>
+                                </span>
+                                <span class="nav-link-title">Settings</span>
+                            </a>
+                        </li>
+                    </ul>
+                    <div class="mt-auto pt-3 pb-2 text-center">
+                        <a href="/static/guide/index.html" class="text-muted small" style="opacity: 0.5;">
+                            Инструкция
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <div class="page-wrapper">
+            <div class="page-body">
+                <div class="container-xl">
+
+                    <!-- Dashboard Page -->
+                    <div id="page-dashboard" class="page-content active">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Dashboard</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Stats Cards -->
+                        <div class="row row-deck row-cards mb-4">
+                            <div class="col-sm-6 col-lg-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="subheader">Running Tasks</div>
+                                        </div>
+                                        <div class="h1 mb-0" id="running-tasks">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6 col-lg-3">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="subheader">Total Trades</div>
+                                        </div>
+                                        <div class="h1 mb-0" id="total-trades">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-sm-6 col-lg-3 opacity-12">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <div class="d-flex align-items-center">
+                                            <div class="subheader">Total Profit</div>
+                                        </div>
+                                        <div class="h1 mb-0 text-success" id="total-profit">$0.00</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active Tasks -->
+                        <div class="card mb-4">
+                            <div class="card-header">
+                                <h3 class="card-title">Active Tasks</h3>
+                            </div>
+                            <div class="card-body" id="active-tasks-list">
+                                <p class="text-muted">No active tasks</p>
+                            </div>
+                        </div>
+
+                        <!-- Recent Trades -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h3 class="card-title">Recent Trades</h3>
+                            </div>
+                            <div class="card-body" id="recent-trades">
+                                <p class="text-muted">No trades yet</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- New Task Page -->
+                    <div id="page-new-task" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">New Task</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-lg-8">
+                                <div class="card" id="new-task-form-card">
+                                    <div class="card-header">
+                                        <h3 class="card-title">Create Task</h3>
+                                    </div>
+                                    <div class="card-body" id="new-task-body">
+                                        <div class="mb-3">
+                                            <label class="form-label">Task Type</label>
+                                            <div class="btn-group w-100" role="group">
+                                                <input type="radio" class="btn-check" name="task-type" id="task-type-mm"
+                                                    value="market_maker" checked>
+                                                <label class="btn btn-outline-primary" for="task-type-mm">
+                                                    <i class="ti ti-chart-candle me-1"></i> Buy Shares
+                                                </label>
+                                                <input type="radio" class="btn-check" name="task-type"
+                                                    id="task-type-sell" value="sell_shares">
+                                                <label class="btn btn-outline-primary" for="task-type-sell">
+                                                    <i class="ti ti-coin me-1"></i> Sell Shares
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div id="market-maker-fields">
+                                            <div class="mb-3">
+                                                <label class="form-label">Event URL</label>
+                                                <input type="text" class="form-control" id="task-url"
+                                                    placeholder="https://app.opinion.trade/detail?topicId=...">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Name section</label>
+                                                <input type="text" class="form-control" id="task-outcome"
+                                                    placeholder="e.g. SoFi Technologies">
+                                            </div>
+                                            <div class="mb-3">
+                                                <label class="form-label">Min Volume (USDT)</label>
+                                                <input type="number" class="form-control" id="task-min-volume" value="5"
+                                                    step="0.5" style="max-width: 150px;">
+                                                <small class="text-muted">Ignore orders smaller than this</small>
+                                            </div>
+                                        </div>
+                                        <div id="sell-shares-fields" style="display: none;">
+                                            <div id="sell-shares-body">
+                                                <div class="mb-3">
+                                                    <label class="form-label">Topic ID (optional)</label>
+                                                    <input type="number" class="form-control" id="sell-topic-id"
+                                                        placeholder="Leave empty for all positions"
+                                                        style="max-width: 250px;">
+                                                    <small class="text-muted">Filter by specific event, or leave empty
+                                                        to show all</small>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer" id="new-task-footer">
+                                        <button type="button" class="btn btn-primary" onclick="createTask()">
+                                            <i class="ti ti-chart-candle me-1"></i> Get Prices
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tasks Page -->
+                    <div id="page-tasks" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Tasks</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="card-header">
+                                <ul class="nav nav-tabs card-header-tabs">
+                                    <li class="nav-item">
+                                        <a href="#" class="nav-link active" data-tab="running">Running</a>
+                                    </li>
+                                    <li class="nav-item">
+                                        <a href="#" class="nav-link" data-tab="all">All Tasks</a>
+                                    </li>
+                                </ul>
+                            </div>
+                            <div class="card-body" id="tasks-container">
+                                <p class="text-muted">No tasks</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Trades Page -->
+                    <div id="page-trades" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Trade History</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row row-cards mb-4">
+                            <div class="col-6 col-md-3">
+                                <div class="card card-sm">
+                                    <div class="card-body">
+                                        <div class="subheader">Total</div>
+                                        <div class="h3" id="trades-total">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 opacity-12">
+                                <div class="card card-sm">
+                                    <div class="card-body">
+                                        <div class="subheader">Profit</div>
+                                        <div class="h3 text-success" id="trades-profit">$0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 opacity-12">
+                                <div class="card card-sm">
+                                    <div class="card-body">
+                                        <div class="subheader">Wins</div>
+                                        <div class="h3" id="trades-wins">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6 col-md-3 opacity-12">
+                                <div class="card card-sm">
+                                    <div class="card-body">
+                                        <div class="subheader">Losses</div>
+                                        <div class="h3" id="trades-losses">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <div class="table-responsive">
+                                <table class="table card-table table-vcenter">
+                                    <thead>
+                                        <tr>
+                                            <th>Time</th>
+                                            <th>Event</th>
+                                            <th>Side</th>
+                                            <th>Action</th>
+                                            <th>Price</th>
+                                            <th>Shares</th>
+                                            <th>Amount</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="trades-tbody">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Settings Page -->
+                    <div id="page-settings" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Settings</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card" style="max-width: 600px;">
+                            <div class="card-header">
+                                <h3 class="card-title">Authentication</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Auth Token <span class="text-muted">(requires refresh
+                                            every 24h)</span></label>
+                                    <div class="input-group">
+                                        <input type="text" class="form-control" id="setting-auth-token"
+                                            placeholder="Paste your auth token here...">
+                                        <button class="btn btn-outline-secondary" type="button" onclick="pasteToken()">
+                                            <i class="ti ti-clipboard me-1"></i> Paste
+                                        </button>
+                                    </div>
+                                    <div id="token-status" class="mt-2 small">
+                                        <!-- Token status will be displayed here -->
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card mt-3" style="max-width: 600px;">
+                            <div class="card-header">
+                                <h3 class="card-title">Order Settings</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Min Order Volume (USDT)</label>
+                                    <input type="number" class="form-control" id="setting-min-volume" value="5"
+                                        step="0.5">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Monitoring Interval (seconds)</label>
+                                    <input type="number" class="form-control" id="setting-interval" value="10" step="1">
+                                </div>
+                                <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- New Task Modal -->
+    <div class="modal modal-blur fade" id="new-task-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">New Task</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="modal-body-content">
+                    <div class="mb-3">
+                        <label class="form-label">Task Type</label>
+                        <select class="form-select" id="task-type">
+                            <option value="market_maker">Market Maker</option>
+                            <option value="sell_shares">Sell Shares</option>
+                        </select>
+                    </div>
+                    <div id="market-maker-fields">
+                        <div class="mb-3">
+                            <label class="form-label">Event URL</label>
+                            <input type="text" class="form-control" id="task-url"
+                                placeholder="https://app.opinion.trade/detail?topicId=...">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Outcome Name</label>
+                            <input type="text" class="form-control" id="task-outcome"
+                                placeholder="e.g. SoFi Technologies">
+                        </div>
+                    </div>
+                    <div id="sell-shares-fields" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Topic ID (optional)</label>
+                            <input type="number" class="form-control" id="task-topic-id"
+                                placeholder="Leave empty for all">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Mode</label>
+                            <select class="form-select" id="task-mode">
+                                <option value="standard">Standard</option>
+                                <option value="spread">Spread</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" id="modal-footer-content">
+                    <button type="button" class="btn" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="createTask()">Get Prices</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Modal -->
+    <div class="modal modal-blur fade" id="logs-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Logs</h5>
+                    <div class="ms-auto me-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="copyLogs()">
+                            <i class="ti ti-copy me-1"></i> Copy
+                        </button>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="logs-container" class="logs-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabler JS -->
+    <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.0.0-beta20/dist/js/tabler.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>
