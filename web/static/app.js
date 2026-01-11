@@ -70,6 +70,9 @@ function navigateTo(page) {
     else if (page === 'tasks') loadTasks('running');
     else if (page === 'trades') loadTrades();
     else if (page === 'settings') loadSettingsPage();
+    else if (page === 'split-sell') loadSplitSellPage();
+    else if (page === 'buy-shares') loadBuySharesPage();
+    else if (page === 'sell-shares') loadSellSharesPage();
 }
 
 function loadSettingsPage() {
@@ -273,6 +276,7 @@ function getTypeBadgeClass(type) {
     switch (type) {
         case 'market_maker': return 'bg-azure" style="color: white !important;';
         case 'sell_shares': return 'bg-orange" style="color: white !important;';
+        case 'split_and_sell': return 'bg-blue" style="color: white !important;';
         default: return 'bg-secondary" style="color: white !important;';
     }
 }
@@ -339,49 +343,302 @@ async function loadTrades() {
 let logsModal = null;
 
 async function createTask() {
-    const type = document.querySelector('input[name="task-type"]:checked')?.value || 'market_maker';
+    // market_maker Buy Shares page
+    const url = document.getElementById('task-url').value;
+    const outcome = document.getElementById('task-outcome').value;
+    const minVolume = parseFloat(document.getElementById('task-min-volume').value) || 5;
 
-    if (type === 'market_maker') {
-        const url = document.getElementById('task-url').value;
-        const outcome = document.getElementById('task-outcome').value;
-        const minVolume = parseFloat(document.getElementById('task-min-volume').value) || 5;
+    if (!url || !outcome) {
+        alert('Please fill URL and select an Outcome');
+        return;
+    }
 
-        if (!url || !outcome) {
-            alert('Please fill URL and Outcome');
-            return;
-        }
+    // Show loading
+    const footer = document.getElementById('buy-shares-footer');
+    if (footer) footer.innerHTML = '<span class="text-muted">Loading prices...</span>';
 
-        // Show loading
-        const footer = document.getElementById('new-task-footer');
-        if (footer) footer.innerHTML = '<span class="text-muted">Loading prices...</span>';
+    try {
+        const preview = await api('/api/preview', 'POST', {
+            url,
+            outcome,
+            amount: 15,
+            min_volume: minVolume,
+            auth_token: settings.authToken || null
+        });
 
-        try {
-            const preview = await api('/api/preview', 'POST', {
-                url,
-                outcome,
-                amount: 15,
-                min_volume: minVolume,
-                auth_token: settings.authToken || null
-            });
+        showPreview(preview, { url, outcome, min_volume: minVolume });
 
-            showPreview(preview, { url, outcome, min_volume: minVolume });
-
-        } catch (e) {
-            alert('Failed to get prices: ' + e.message);
-            resetNewTaskForm();
-        }
-    } else {
-        // Sell shares - get positions first
-        getMyShares();
+    } catch (e) {
+        alert('Failed to get prices: ' + e.message);
+        loadBuySharesPage();
     }
 }
 
-// ==================== SELL SHARES ====================
+// ==================== BUY SHARES PAGE ====================
 
-async function getMyShares() {
+let buyPreviewData = null;
+
+function loadBuySharesPage() {
+    // Reset to step 1
+    document.getElementById('buy-step-1').style.display = 'block';
+    document.getElementById('buy-step-2').style.display = 'none';
+    // Reset form
+    const dropdown = document.getElementById('task-outcome');
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Enter URL and click Fetch --</option>';
+        dropdown.disabled = true;
+    }
+    const urlInput = document.getElementById('task-url');
+    if (urlInput) urlInput.value = '';
+}
+
+async function getBuyPreview() {
+    const url = document.getElementById('task-url').value.trim();
+    const outcome = document.getElementById('task-outcome').value;
+    const minVolume = parseFloat(document.getElementById('task-min-volume').value) || 5;
+
+    if (!url || !outcome) {
+        alert('Please enter URL and select an Outcome');
+        return;
+    }
+
+    // Show loading on button
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Loading...';
+
+    try {
+        const saved = localStorage.getItem('settings');
+        const settings = saved ? JSON.parse(saved) : {};
+
+        const preview = await api('/api/preview', 'POST', {
+            url,
+            outcome,
+            min_volume: minVolume,
+            auth_token: settings.authToken || null
+        });
+
+        buyPreviewData = {
+            preview,
+            config: { url, outcome, min_volume: minVolume }
+        };
+
+        showBuyPreview(preview);
+        document.getElementById('buy-step-1').style.display = 'none';
+        document.getElementById('buy-step-2').style.display = 'block';
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+function showBuyPreview(preview) {
+    const content = document.getElementById('buy-preview-content');
+
+    const yesBid = preview.yes?.bid || 0;
+    const noBid = preview.no?.bid || 0;
+
+    function renderBidTable(data) {
+        const bids = data.bids || [];
+        let total = 0;
+        return bids.slice(0, 5).map(b => {
+            total += parseFloat(b[1]) * parseFloat(b[0]);
+            return `<tr class="text-success">
+                <td>${parseFloat(b[1]).toFixed(1)}</td>
+                <td>${total.toFixed(1)}</td>
+                <td><strong>${parseFloat(b[0]).toFixed(3)}</strong></td>
+            </tr>`;
+        }).join('');
+    }
+
+    function renderAskTable(data) {
+        const asks = data.asks || [];
+        let total = 0;
+        return asks.slice(0, 5).map(a => {
+            total += parseFloat(a[1]) * parseFloat(a[0]);
+            return `<tr class="text-danger">
+                <td><strong>${parseFloat(a[0]).toFixed(3)}</strong></td>
+                <td>${total.toFixed(1)}</td>
+                <td>${parseFloat(a[1]).toFixed(1)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    content.innerHTML = `
+        <div class="alert alert-info mb-3">
+            <strong>${preview.outcome || buyPreviewData.config.outcome}</strong>
+        </div>
+
+        <!-- YES Orderbook (full width) -->
+        <div class="card mb-3">
+            <div class="card-header py-2"><strong class="text-success">YES</strong></div>
+            <div class="card-body p-0">
+                <div class="row g-0">
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">BID</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
+                            <tbody>${renderBidTable(preview.yes)}</tbody>
+                        </table>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">ASK</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Price</th><th>Total (USDT)</th><th>Shares</th></tr></thead>
+                            <tbody>${renderAskTable(preview.yes)}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NO Orderbook (full width) -->
+        <div class="card mb-4">
+            <div class="card-header py-2"><strong class="text-danger">NO</strong></div>
+            <div class="card-body p-0">
+                <div class="row g-0">
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">BID</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
+                            <tbody>${renderBidTable(preview.no)}</tbody>
+                        </table>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">ASK</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Price</th><th>Total (USDT)</th><th>Shares</th></tr></thead>
+                            <tbody>${renderAskTable(preview.no)}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Amount (USDT per side)</label>
+                <input type="number" class="form-control" id="buy-amount" value="15" step="1" min="1">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Mode</label>
+                <select class="form-select" id="buy-mode">
+                    <option value="standard">Standard</option>
+                    <option value="spread">Spread</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-check form-switch mt-4">
+                    <input class="form-check-input" type="checkbox" id="buy-single-order" onchange="toggleBuySingleOrder()">
+                    <span class="form-check-label">Single Order</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="row mb-3" id="buy-single-order-side" style="display: none;">
+            <div class="col-md-6">
+                <label class="form-label">Order</label>
+                <select class="form-select" id="buy-side">
+                    <option value="yes">YES</option>
+                    <option value="no">NO</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="alert alert-warning">
+            <strong>Buy -</strong>  at YES: ${yesBid.toFixed(3)}, NO: ${noBid.toFixed(3)}
+        </div>
+    `;
+}
+
+function toggleBuySingleOrder() {
+    const checkbox = document.getElementById('buy-single-order');
+    const sideDiv = document.getElementById('buy-single-order-side');
+    if (sideDiv) sideDiv.style.display = checkbox?.checked ? 'block' : 'none';
+}
+
+function backToBuyStep1() {
+    document.getElementById('buy-step-1').style.display = 'block';
+    document.getElementById('buy-step-2').style.display = 'none';
+}
+
+async function confirmAndStartBuy() {
+    if (!buyPreviewData) {
+        alert('No preview data');
+        return;
+    }
+
+    const amount = parseFloat(document.getElementById('buy-amount').value) || 15;
+    const mode = document.getElementById('buy-mode').value;
+    const singleOrder = document.getElementById('buy-single-order')?.checked || false;
+    const side = document.getElementById('buy-side')?.value || 'yes';
+
+    const saved = localStorage.getItem('settings');
+    const settings = saved ? JSON.parse(saved) : {};
+
+    const config = {
+        ...buyPreviewData.config,
+        amount,
+        mode,
+        single_order: singleOrder,
+        side: singleOrder ? side : null,
+        interval: settings.pollInterval || 10,
+        auth_token: settings.authToken || null
+    };
+
+    try {
+        const result = await api('/api/tasks', 'POST', {
+            type: 'market_maker',
+            config
+        });
+
+        await api(`/api/tasks/${result.id}/start`, 'POST');
+        navigateTo('tasks');
+        loadDashboard();
+        showLogs(result.id);
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+// ==================== SELL SHARES PAGE ====================
+
+function loadSellSharesPage() {
+    // Reset form
+    const topicIdInput = document.getElementById('sell-topic-id');
+    if (topicIdInput) topicIdInput.value = '';
+
+    // Reset body and footer
+    const body = document.getElementById('sell-shares-body');
+    const footer = document.getElementById('sell-shares-footer');
+    if (body) {
+        body.innerHTML = `
+            <div class="mb-3">
+                <label class="form-label">Topic ID (optional)</label>
+                <input type="number" class="form-control" id="sell-topic-id"
+                    placeholder="Leave empty for all positions" style="max-width: 250px;">
+                <small class="text-muted">Filter by specific event, or leave empty to show all</small>
+            </div>
+        `;
+    }
+    if (footer) {
+        footer.innerHTML = `
+            <button type="button" class="btn btn-primary" onclick="loadSellPositions()">
+                <i class="ti ti-list me-1"></i> Load Positions
+            </button>
+        `;
+    }
+}
+
+async function loadSellPositions() {
     const topicId = document.getElementById('sell-topic-id')?.value;
 
-    const footer = document.getElementById('new-task-footer');
+    const footer = document.getElementById('sell-shares-footer');
     if (footer) footer.innerHTML = '<span class="text-muted">Loading positions...</span>';
 
     try {
@@ -390,26 +647,24 @@ async function getMyShares() {
             auth_token: settings.authToken || null
         });
 
-        showPositions(result.positions);
+        showSellPositions(result.positions);
 
     } catch (e) {
         alert('Failed to get positions: ' + e.message);
-        resetNewTaskForm();
+        loadSellSharesPage();
     }
 }
 
-let currentPositions = null;
-
-function showPositions(positions) {
+function showSellPositions(positions) {
     currentPositions = positions;
 
     const body = document.getElementById('sell-shares-body');
-    const footer = document.getElementById('new-task-footer');
+    const footer = document.getElementById('sell-shares-footer');
 
     if (positions.length === 0) {
         body.innerHTML = '<div class="alert alert-info">No positions available to sell</div>';
         footer.innerHTML = `
-            <button type="button" class="btn" onclick="resetNewTaskForm()">
+            <button type="button" class="btn" onclick="loadSellSharesPage()">
                 <i class="ti ti-arrow-left me-1"></i> Back
             </button>
         `;
@@ -422,53 +677,37 @@ function showPositions(positions) {
             <table class="table table-vcenter">
                 <thead>
                     <tr>
-                        <th>Event</th>
                         <th>Outcome</th>
                         <th>Side</th>
-                        <th>Shares</th>
+                        <th>Market Price</th>
                         <th>Value</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${positions.map(pos => `
+                    ${positions.map(p => `
                         <tr>
-                            <td><small class="text-muted">${pos.title}</small></td>
-                            <td>${pos.outcome}</td>
-                            <td><span class="badge ${pos.side === 'YES' ? 'bg-success' : 'bg-danger'}">${pos.side}</span></td>
-                            <td>${pos.shares}</td>
-                            <td>$${pos.value}</td>
+                            <td>${p.outcome || 'N/A'}</td>
+                            <td><span class="badge bg-${p.side?.toLowerCase() === 'yes' ? 'success' : 'danger'} text-white">${p.side?.toUpperCase()}</span></td>
+                            <td>${parseFloat(p.last_price || 0).toFixed(3)}</td>
+                            <td>$${(parseFloat(p.shares || 0) * parseFloat(p.last_price || 0)).toFixed(2)}</td>
                         </tr>
                     `).join('')}
                 </tbody>
             </table>
         </div>
-        
-        <div class="mb-3">
-            <label class="form-label">Sell Mode</label>
-            <div class="btn-group w-100" role="group" style="max-width: 400px;">
-                <input type="radio" class="btn-check" name="sell-mode" id="sell-mode-standard" value="standard" checked>
-                <label class="btn btn-outline-primary" for="sell-mode-standard">
-                    Standard (Best Bid)
-                </label>
-                <input type="radio" class="btn-check" name="sell-mode" id="sell-mode-spread" value="spread">
-                <label class="btn btn-outline-primary" for="sell-mode-spread">
-                    Spread (First in Queue)
-                </label>
-            </div>
-        </div>
     `;
 
     footer.innerHTML = `
-        <button type="button" class="btn" onclick="resetNewTaskForm()">
+        <button type="button" class="btn" onclick="loadSellSharesPage()">
             <i class="ti ti-arrow-left me-1"></i> Back
         </button>
-        <button type="button" class="btn btn-warning" onclick="confirmSellShares()">
-            <i class="ti ti-coin me-1"></i> Sell All Positions
+        <button type="button" class="btn btn-warning" onclick="confirmSellAllShares()">
+            Sell All
         </button>
     `;
 }
 
-async function confirmSellShares() {
+async function confirmSellAllShares() {
     if (!currentPositions || currentPositions.length === 0) return;
 
     const mode = document.querySelector('input[name="sell-mode"]:checked')?.value || 'standard';
@@ -483,7 +722,7 @@ async function confirmSellShares() {
     if (topicId) config.topic_id = parseInt(topicId);
 
     try {
-        const footer = document.getElementById('new-task-footer');
+        const footer = document.getElementById('sell-shares-footer');
         if (footer) footer.innerHTML = '<span class="text-muted">Starting sell task...</span>';
 
         const result = await api('/api/tasks', 'POST', { type: 'sell_shares', config });
@@ -495,12 +734,12 @@ async function confirmSellShares() {
 
     } catch (e) {
         alert('Failed: ' + e.message);
-        resetNewTaskForm();
+        loadSellSharesPage();
     }
 }
 
-function resetModalFooter() {
-    const footer = document.getElementById('new-task-footer');
+function resetBuySharesFooter() {
+    const footer = document.getElementById('buy-shares-footer');
     if (footer) {
         footer.innerHTML = `
             <button type="button" class="btn btn-primary" onclick="createTask()">
@@ -512,6 +751,47 @@ function resetModalFooter() {
 
 function resetNewTaskForm() {
     location.reload();
+}
+
+async function fetchTaskOutcomes() {
+    const url = document.getElementById('task-url').value.trim();
+    if (!url) {
+        alert('Please enter an Event URL first');
+        return;
+    }
+
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const saved = localStorage.getItem('settings');
+        const settings = saved ? JSON.parse(saved) : {};
+
+        const result = await api('/api/outcomes', 'POST', {
+            url,
+            auth_token: settings.authToken || null
+        });
+
+        const dropdown = document.getElementById('task-outcome');
+        dropdown.innerHTML = '<option value="">-- Select section --</option>';
+
+        for (const outcome of result.outcomes) {
+            const option = document.createElement('option');
+            option.value = outcome.title;
+            option.textContent = outcome.title;
+            dropdown.appendChild(option);
+        }
+
+        dropdown.disabled = false;
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 }
 
 let currentPreview = null;
@@ -531,7 +811,7 @@ function showPreview(preview, config) {
                 const price = parseFloat(bid[0]);
                 const size = parseFloat(bid[1]);
                 const total = (price * size).toFixed(2);
-                rows += `<tr><td class="text-muted">${total}</td><td>${size.toFixed(1)}</td><td class="text-success fw-bold">${price.toFixed(3)}</td></tr>`;
+                rows += `<tr><td>${size.toFixed(1)}</td><td class="text-muted">${total}</td><td class="text-success fw-bold">${price.toFixed(3)}</td></tr>`;
             } else {
                 rows += `<tr><td>-</td><td>-</td><td>-</td></tr>`;
             }
@@ -548,7 +828,7 @@ function showPreview(preview, config) {
                 const price = parseFloat(ask[0]);
                 const size = parseFloat(ask[1]);
                 const total = (price * size).toFixed(2);
-                rows += `<tr><td class="text-danger fw-bold">${price.toFixed(3)}</td><td>${size.toFixed(1)}</td><td class="text-muted">${total}</td></tr>`;
+                rows += `<tr><td class="text-danger fw-bold">${price.toFixed(3)}</td><td class="text-muted">${total}</td><td>${size.toFixed(1)}</td></tr>`;
             } else {
                 rows += `<tr><td>-</td><td>-</td><td>-</td></tr>`;
             }
@@ -556,8 +836,8 @@ function showPreview(preview, config) {
         return rows;
     }
 
-    const body = document.getElementById('new-task-body');
-    const footer = document.getElementById('new-task-footer');
+    const body = document.getElementById('buy-shares-body');
+    const footer = document.getElementById('buy-shares-footer');
 
     if (body) body.innerHTML = `
         <div class="mb-4">
@@ -573,14 +853,14 @@ function showPreview(preview, config) {
                             <div class="col-6 border-end">
                                 <div class="p-2 text-center small text-muted">BID</div>
                                 <table class="table table-sm orderbook-table">
-                                    <thead><tr><th>Total</th><th>Size</th><th>Price</th></tr></thead>
+                                    <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
                                     <tbody>${renderBidTable(preview.yes)}</tbody>
                                 </table>
                             </div>
                             <div class="col-6">
                                 <div class="p-2 text-center small text-muted">ASK</div>
                                 <table class="table table-sm orderbook-table">
-                                    <thead><tr><th>Price</th><th>Size</th><th>Total</th></tr></thead>
+                                    <thead><tr><th>Price</th><th>Total (USDT)</th><th>Shares</th></tr></thead>
                                     <tbody>${renderAskTable(preview.yes)}</tbody>
                                 </table>
                             </div>
@@ -596,14 +876,14 @@ function showPreview(preview, config) {
                             <div class="col-6 border-end">
                                 <div class="p-2 text-center small text-muted">BID</div>
                                 <table class="table table-sm orderbook-table">
-                                    <thead><tr><th>Total</th><th>Size</th><th>Price</th></tr></thead>
+                                    <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
                                     <tbody>${renderBidTable(preview.no)}</tbody>
                                 </table>
                             </div>
                             <div class="col-6">
                                 <div class="p-2 text-center small text-muted">ASK</div>
                                 <table class="table table-sm orderbook-table">
-                                    <thead><tr><th>Price</th><th>Size</th><th>Total</th></tr></thead>
+                                    <thead><tr><th>Price</th><th>Shares</th><th>Total (USDT)</th></tr></thead>
                                     <tbody>${renderAskTable(preview.no)}</tbody>
                                 </table>
                             </div>
@@ -964,3 +1244,300 @@ function getStatusIcon(status) {
     };
     return icons[status] || '';
 }
+
+// ==================== SPLIT & SELL ====================
+
+let splitPreviewData = null;
+
+function loadSplitSellPage() {
+    // Reset to step 1
+    document.getElementById('split-step-1').style.display = 'block';
+    document.getElementById('split-step-2').style.display = 'none';
+    // Reset outcome dropdown
+    const dropdown = document.getElementById('split-outcome');
+    if (dropdown) {
+        dropdown.innerHTML = '<option value="">-- Enter URL and click Fetch --</option>';
+        dropdown.disabled = true;
+    }
+}
+
+async function fetchSplitOutcomes() {
+    const url = document.getElementById('split-url').value.trim();
+    if (!url) {
+        alert('Please enter an Event URL first');
+        return;
+    }
+
+    const btn = event.target.closest('button');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+    try {
+        const saved = localStorage.getItem('settings');
+        const settings = saved ? JSON.parse(saved) : {};
+
+        const result = await api('/api/outcomes', 'POST', {
+            url,
+            auth_token: settings.authToken || null
+        });
+
+        const dropdown = document.getElementById('split-outcome');
+        dropdown.innerHTML = '<option value="">-- Select section --</option>';
+
+        for (const outcome of result.outcomes) {
+            const option = document.createElement('option');
+            option.value = outcome.title;
+            option.textContent = outcome.title;
+            dropdown.appendChild(option);
+        }
+
+        dropdown.disabled = false;
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
+}
+
+async function getSplitPreview() {
+    const url = document.getElementById('split-url').value.trim();
+    const outcome = document.getElementById('split-outcome').value.trim();
+    const minVolume = parseFloat(document.getElementById('split-min-volume').value) || 5;
+
+    if (!url || !outcome) {
+        alert('Please fill in URL and Name');
+        return;
+    }
+
+    // Show loading
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Loading...';
+
+    try {
+        // Get settings for auth token
+        const saved = localStorage.getItem('settings');
+        const settings = saved ? JSON.parse(saved) : {};
+
+        const preview = await api('/api/preview', 'POST', {
+            url,
+            outcome,
+            min_volume: minVolume,
+            auth_token: settings.authToken || null
+        });
+
+        splitPreviewData = {
+            preview,
+            config: {
+                url,
+                outcome,
+                min_volume: minVolume
+            }
+        };
+
+        // Show step 2
+        showSplitPreview(preview);
+        document.getElementById('split-step-1').style.display = 'none';
+        document.getElementById('split-step-2').style.display = 'block';
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="ti ti-arrow-right me-1"></i> Get Prices';
+    }
+}
+
+function showSplitPreview(preview) {
+    const content = document.getElementById('split-preview-content');
+
+    // Use nested structure from API
+    const yesSellPrice = preview.yes?.ask || preview.yes?.bid || 0;
+    const noSellPrice = preview.no?.ask || preview.no?.bid || 0;
+
+    // Render orderbook tables
+    function renderBidTable(side) {
+        const bids = side?.bids || [];
+        let total = 0;
+        return bids.map(b => {
+            total += parseFloat(b[1]) * parseFloat(b[0]);
+            return `<tr class="text-success">
+                <td>${parseFloat(b[1]).toFixed(1)}</td>
+                <td>${total.toFixed(1)}</td>
+                <td><strong>${parseFloat(b[0]).toFixed(3)}</strong></td>
+            </tr>`;
+        }).join('');
+    }
+
+    function renderAskTable(side) {
+        const asks = side?.asks || [];
+        let total = 0;
+        return asks.map(a => {
+            total += parseFloat(a[1]) * parseFloat(a[0]);
+            return `<tr class="text-danger">
+                <td><strong>${parseFloat(a[0]).toFixed(3)}</strong></td>
+                <td>${total.toFixed(1)}</td>
+                <td>${parseFloat(a[1]).toFixed(1)}</td>
+            </tr>`;
+        }).join('');
+    }
+
+    content.innerHTML = `
+        <div class="alert alert-info mb-3">
+            <strong>${preview.outcome || splitPreviewData.config.outcome}</strong>
+        </div>
+
+        <!-- YES Orderbook (full width) -->
+        <div class="card mb-3">
+            <div class="card-header py-2"><strong class="text-success">YES</strong></div>
+            <div class="card-body p-0">
+                <div class="row g-0">
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">BID</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
+                            <tbody>${renderBidTable(preview.yes)}</tbody>
+                        </table>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">ASK</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Price</th><th>Total (USDT)</th><th>Shares</th></tr></thead>
+                            <tbody>${renderAskTable(preview.yes)}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NO Orderbook (full width) -->
+        <div class="card mb-4">
+            <div class="card-header py-2"><strong class="text-danger">NO</strong></div>
+            <div class="card-body p-0">
+                <div class="row g-0">
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">BID</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Shares</th><th>Total (USDT)</th><th>Price</th></tr></thead>
+                            <tbody>${renderBidTable(preview.no)}</tbody>
+                        </table>
+                    </div>
+                    <div class="col-6">
+                        <div class="p-2 text-center small text-muted">ASK</div>
+                        <table class="table table-sm mb-0">
+                            <thead><tr><th>Price</th><th>Total (USDT)</th><th>Shares</th></tr></thead>
+                            <tbody>${renderAskTable(preview.no)}</tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mb-3">
+            <div class="col-md-4">
+                <label class="form-label">Amount to Split (USDT)</label>
+                <input type="number" class="form-control" id="split-amount" value="10" step="1" min="2">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Sell Steps</label>
+                <input type="number" class="form-control" id="split-sell-steps" value="1" min="1" max="20" onchange="updateAggressiveVisibility()">
+            </div>
+            <div class="col-md-4" id="aggressive-container" style="display: none;">
+                <label class="form-label">&nbsp;</label>
+                <label class="form-check form-switch mt-2">
+                    <input class="form-check-input" type="checkbox" id="split-aggressive-mode">
+                    <span class="form-check-label">Aggressive Mode</span>
+                </label>
+            </div>
+        </div>
+
+        <div class="alert alert-warning">
+            Split <span id="split-amount-display">10</span> USDT → 
+            <span id="split-shares-display">10</span> YES + 
+            <span id="split-shares-display2">10</span> NO shares<br>
+            Sell at YES: ${yesSellPrice.toFixed(3)}, NO: ${noSellPrice.toFixed(3)}
+        </div>
+    `;
+
+    // Update display on amount change
+    document.getElementById('split-amount').addEventListener('input', (e) => {
+        const amount = parseFloat(e.target.value) || 0;
+        document.getElementById('split-amount-display').textContent = amount;
+        document.getElementById('split-shares-display').textContent = amount.toFixed(0);
+        document.getElementById('split-shares-display2').textContent = amount.toFixed(0);
+    });
+}
+
+function backToSplitStep1() {
+    document.getElementById('split-step-1').style.display = 'block';
+    document.getElementById('split-step-2').style.display = 'none';
+}
+
+async function confirmAndStartSplit() {
+    if (!splitPreviewData) {
+        alert('No preview data');
+        return;
+    }
+
+    const amount = parseFloat(document.getElementById('split-amount').value) || 10;
+
+    // Get settings
+    const saved = localStorage.getItem('settings');
+    const settings = saved ? JSON.parse(saved) : {};
+
+    // Get step 2 form values
+    const sellSteps = parseInt(document.getElementById('split-sell-steps').value) || 1;
+    const aggressiveMode = document.getElementById('split-aggressive-mode')?.checked || false;
+
+    const config = {
+        ...splitPreviewData.config,
+        amount,
+        mode: 'standard',  // Always use standard mode
+        sell_steps: sellSteps,
+        aggressive_mode: aggressiveMode,
+        interval: settings.pollInterval || 10,
+        auth_token: settings.authToken || null
+    };
+
+    // Show loading
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Starting...';
+
+    try {
+        const result = await api('/api/tasks', 'POST', {
+            type: 'split_and_sell',
+            config
+        });
+
+        // Start the task
+        await api(`/api/tasks/${result.id}/start`, 'POST');
+
+        // Navigate to tasks and show logs
+        navigateTo('tasks');
+        loadDashboard();
+        showLogs(result.id);
+
+    } catch (e) {
+        alert('Error: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'Split & Sell';
+    }
+}
+
+function updateAggressiveVisibility() {
+    const steps = parseInt(document.getElementById('split-sell-steps')?.value) || 1;
+    const container = document.getElementById('aggressive-container');
+    if (container) {
+        container.style.display = steps >= 2 ? 'block' : 'none';
+        if (steps < 2) {
+            const checkbox = document.getElementById('split-aggressive-mode');
+            if (checkbox) checkbox.checked = false;
+        }
+    }
+}
+

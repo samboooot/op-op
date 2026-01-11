@@ -107,11 +107,27 @@
                             </a>
                         </li>
                         <li class="nav-item">
-                            <a class="nav-link" href="#" data-page="new-task">
+                            <a class="nav-link" href="#" data-page="split-sell">
                                 <span class="nav-link-icon d-md-none d-lg-inline-block">
-                                    <i class="ti ti-plus"></i>
+                                    <i class="ti ti-arrows-split-2"></i>
                                 </span>
-                                <span class="nav-link-title">New Task</span>
+                                <span class="nav-link-title">Split & Sell</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="buy-shares">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-shopping-cart"></i>
+                                </span>
+                                <span class="nav-link-title">Buy Shares</span>
+                            </a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="#" data-page="sell-shares">
+                                <span class="nav-link-icon d-md-none d-lg-inline-block">
+                                    <i class="ti ti-coin"></i>
+                                </span>
+                                <span class="nav-link-title">Sell Shares</span>
                             </a>
                         </li>
                         <li class="nav-item">
@@ -217,72 +233,103 @@
                         </div>
                     </div>
 
-                    <!-- New Task Page -->
-                    <div id="page-new-task" class="page-content" style="display: none;">
+                    <!-- Buy Shares Page -->
+                    <div id="page-buy-shares" class="page-content" style="display: none;">
                         <div class="page-header d-print-none mb-4">
                             <div class="row align-items-center">
                                 <div class="col">
-                                    <h2 class="page-title">New Task</h2>
+                                    <h2 class="page-title">Buy Shares</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 1: Select Market -->
+                        <div id="buy-step-1">
+                            <div class="card" style="max-width: 600px;">
+                                <div class="card-header">
+                                    <h3 class="card-title">Step 1: Select Market</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Event URL</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="task-url"
+                                                placeholder="https://app.opinion.trade/detail?topicId=...">
+                                            <button class="btn btn-outline-primary" type="button"
+                                                onclick="fetchTaskOutcomes()">
+                                                <i class="ti ti-refresh me-1"></i>Fetch
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Section</label>
+                                        <select class="form-select" id="task-outcome" disabled>
+                                            <option value="">-- Enter URL and click Fetch --</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Min volume (USDT) ignore</label>
+                                        <input type="number" class="form-control" id="task-min-volume" value="5"
+                                            step="0.5">
+                                    </div>
+                                </div>
+                                <div class="card-footer">
+                                    <button class="btn btn-primary" onclick="getBuyPreview()">
+                                        <i class="ti ti-arrow-right me-1"></i> Get Prices
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Preview & Confirm -->
+                        <div id="buy-step-2" style="display: none;">
+                            <div class="card" style="max-width: 800px;">
+                                <div class="card-header">
+                                    <h3 class="card-title">Step 2: Preview & Confirm</h3>
+                                </div>
+                                <div class="card-body" id="buy-preview-content">
+                                    <!-- Filled by JS -->
+                                </div>
+                                <div class="card-footer">
+                                    <button class="btn" onclick="backToBuyStep1()">
+                                        <i class="ti ti-arrow-left me-1"></i> Back
+                                    </button>
+                                    <button class="btn btn-success" onclick="confirmAndStartBuy()">
+                                        Buy
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sell Shares Page -->
+                    <div id="page-sell-shares" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Sell Shares</h2>
                                 </div>
                             </div>
                         </div>
 
                         <div class="row">
                             <div class="col-lg-8">
-                                <div class="card" id="new-task-form-card">
+                                <div class="card" id="sell-shares-form-card">
                                     <div class="card-header">
-                                        <h3 class="card-title">Create Task</h3>
+                                        <h3 class="card-title">Sell Existing Positions</h3>
                                     </div>
-                                    <div class="card-body" id="new-task-body">
+                                    <div class="card-body" id="sell-shares-body">
                                         <div class="mb-3">
-                                            <label class="form-label">Task Type</label>
-                                            <div class="btn-group w-100" role="group">
-                                                <input type="radio" class="btn-check" name="task-type" id="task-type-mm"
-                                                    value="market_maker" checked>
-                                                <label class="btn btn-outline-primary" for="task-type-mm">
-                                                    <i class="ti ti-chart-candle me-1"></i> Buy Shares
-                                                </label>
-                                                <input type="radio" class="btn-check" name="task-type"
-                                                    id="task-type-sell" value="sell_shares">
-                                                <label class="btn btn-outline-primary" for="task-type-sell">
-                                                    <i class="ti ti-coin me-1"></i> Sell Shares
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div id="market-maker-fields">
-                                            <div class="mb-3">
-                                                <label class="form-label">Event URL</label>
-                                                <input type="text" class="form-control" id="task-url"
-                                                    placeholder="https://app.opinion.trade/detail?topicId=...">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">Name section</label>
-                                                <input type="text" class="form-control" id="task-outcome"
-                                                    placeholder="e.g. SoFi Technologies">
-                                            </div>
-                                            <div class="mb-3">
-                                                <label class="form-label">Min Volume (USDT)</label>
-                                                <input type="number" class="form-control" id="task-min-volume" value="5"
-                                                    step="0.5" style="max-width: 150px;">
-                                                <small class="text-muted">Ignore orders smaller than this</small>
-                                            </div>
-                                        </div>
-                                        <div id="sell-shares-fields" style="display: none;">
-                                            <div id="sell-shares-body">
-                                                <div class="mb-3">
-                                                    <label class="form-label">Topic ID (optional)</label>
-                                                    <input type="number" class="form-control" id="sell-topic-id"
-                                                        placeholder="Leave empty for all positions"
-                                                        style="max-width: 250px;">
-                                                    <small class="text-muted">Filter by specific event, or leave empty
-                                                        to show all</small>
-                                                </div>
-                                            </div>
+                                            <label class="form-label">Topic ID (optional)</label>
+                                            <input type="number" class="form-control" id="sell-topic-id"
+                                                placeholder="Leave empty for all positions" style="max-width: 250px;">
+                                            <small class="text-muted">Filter by specific event, or leave empty to show
+                                                all</small>
                                         </div>
                                     </div>
-                                    <div class="card-footer" id="new-task-footer">
-                                        <button type="button" class="btn btn-primary" onclick="createTask()">
-                                            <i class="ti ti-chart-candle me-1"></i> Get Prices
+                                    <div class="card-footer" id="sell-shares-footer">
+                                        <button type="button" class="btn btn-primary" onclick="loadSellPositions()">
+                                            <i class="ti ti-list me-1"></i> Load Positions
                                         </button>
                                     </div>
                                 </div>
@@ -428,9 +475,78 @@
                                 </div>
                                 <div class="mb-3">
                                     <label class="form-label">Monitoring Interval (seconds)</label>
-                                    <input type="number" class="form-control" id="setting-interval" value="10" step="1">
+                                    <input type="number" class="form-control" id="setting-interval" value="20" step="1">
                                 </div>
                                 <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Split & Sell Page -->
+                    <div id="page-split-sell" class="page-content" style="display: none;">
+                        <div class="page-header d-print-none mb-4">
+                            <div class="row align-items-center">
+                                <div class="col">
+                                    <h2 class="page-title">Split & Sell</h2>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 1: Market Selection -->
+                        <div id="split-step-1">
+                            <div class="card" style="max-width: 600px;">
+                                <div class="card-header">
+                                    <h3 class="card-title">Step 1: Select Market</h3>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Event URL</label>
+                                        <div class="input-group">
+                                            <input type="text" class="form-control" id="split-url"
+                                                placeholder="https://app.opinion.trade/detail?topicId=...">
+                                            <button class="btn btn-outline-primary" type="button"
+                                                onclick="fetchSplitOutcomes()">
+                                                <i class="ti ti-refresh me-1"></i>Fetch
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Section</label>
+                                        <select class="form-select" id="split-outcome" disabled>
+                                            <option value="">-- Enter URL and click Fetch --</option>
+                                        </select>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label">Min volume (USDT) ignore</label>
+                                        <input type="number" class="form-control" id="split-min-volume" value="5"
+                                            step="0.5">
+                                    </div>
+                                </div>
+                                <div class="card-footer">
+                                    <button class="btn btn-primary" onclick="getSplitPreview()">
+                                        <i class="ti ti-arrow-right me-1"></i> Get Prices
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Step 2: Preview & Confirm -->
+                        <div id="split-step-2" style="display: none;">
+                            <div class="card" style="max-width: 800px;">
+                                <div class="card-header">
+                                    <h3 class="card-title">Step 2: Preview & Confirm</h3>
+                                </div>
+                                <div class="card-body" id="split-preview-content">
+                                    <!-- Preview will be rendered here -->
+                                </div>
+                                <div class="card-footer" id="split-preview-footer">
+                                    <button class="btn btn-outline-secondary me-2" onclick="backToSplitStep1()">
+                                        <i class="ti ti-arrow-left me-1"></i> Back
+                                    </button>
+                                    <button class="btn btn-success" onclick="confirmAndStartSplit()">
+                                        Split & Sell
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

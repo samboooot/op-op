@@ -124,6 +124,67 @@ async def update_auth_token(req: UpdateTokenRequest):
     return {"status": "ok", "message": "Auth token updated for all tasks"}
 
 
+# ==================== OUTCOMES API ====================
+
+class OutcomesRequest(BaseModel):
+    url: str
+    auth_token: str = None
+
+
+@app.post("/api/outcomes")
+async def get_outcomes(req: OutcomesRequest):
+    """Get available outcomes for a topic"""
+    import re
+    
+    # Parse URL
+    match = re.search(r'topicId=(\d+)', req.url)
+    if not match:
+        raise HTTPException(status_code=400, detail="Invalid URL: topicId not found")
+    
+    topic_id = int(match.group(1))
+    
+    # Get client
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    from opinion_client import OpinionTradeClient
+    
+    auth = req.auth_token or os.getenv("AUTH_TOKEN")
+    if not auth:
+        raise HTTPException(status_code=400, detail="No auth token")
+    
+    try:
+        client = OpinionTradeClient(
+            auth_token=auth,
+            wallet_address=os.getenv("WALLET_ADDRESS"),
+            multisig_address=os.getenv("MULTISIG_ADDRESS"),
+            private_key=os.getenv("PRIVATE_KEY")
+        )
+        
+        topic_data = client.get_topic_data(topic_id)
+        children = topic_data.get("childList", [])
+        
+        outcomes = []
+        for child in children:
+            outcomes.append({
+                "title": child.get("title"),
+                "topicId": child.get("topicId"),
+                "yesPos": child.get("yesPos"),
+                "noPos": child.get("noPos")
+            })
+        
+        return {
+            "topic_id": topic_id,
+            "topic_title": topic_data.get("title", "Unknown"),
+            "outcomes": outcomes
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get outcomes: {e}")
+
+
 # ==================== PREVIEW API ====================
 
 class PreviewRequest(BaseModel):
@@ -292,11 +353,12 @@ async def get_positions(req: PositionsRequest):
             last_price = float(pos.get("lastPrice", 0))
             
             if available > 0.01 and available * last_price >= 1.0:
+                # topicTitle contains outcome name (e.g. "Pure Storage (PSTG)")
                 result.append({
                     "topic_id": pos.get("topicId"),
                     "parent_topic_id": pos.get("mutilTopicId"),
-                    "title": pos.get("topicTitle", "Unknown"),
-                    "outcome": pos.get("childTopicTitle", "Unknown"),
+                    "title": pos.get("parentTopicTitle", pos.get("mutilTopicTitle", "Event")),
+                    "outcome": pos.get("topicTitle", "Unknown"),
                     "side": "YES" if pos.get("outcomeSide") == 1 else "NO",
                     "shares": round(available, 2),
                     "value": round(available * last_price, 2),

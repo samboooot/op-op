@@ -144,7 +144,7 @@ class TaskManager:
                 if task.status == TaskStatus.RUNNING
             ]
     
-    def get_task_logs(self, task_id: str, limit: int = 100) -> List[str]:
+    def get_task_logs(self, task_id: str, limit: int = 500) -> List[str]:
         """Get task logs"""
         with self._lock:
             task = self.tasks.get(task_id)
@@ -183,9 +183,9 @@ class TaskManager:
             task = self.tasks.get(task_id)
             if task:
                 task.logs.append(log_entry)
-                # Keep only last 1000 logs in memory
-                if len(task.logs) > 1000:
-                    task.logs = task.logs[-1000:]
+                # Keep only last 5000 logs in memory
+                if len(task.logs) > 5000:
+                    task.logs = task.logs[-5000:]
             
             callbacks = self.log_callbacks.get(task_id, []).copy()
         

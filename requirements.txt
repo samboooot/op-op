@@ -1,0 +1,11 @@
+# Ядро бота 
+requests
+eth-account
+python-dotenv
+
+# Дашборд
+fastapi==0.128.0
+uvicorn==0.40.0
+websockets==15.0.1
+python-multipart==0.0.21
+

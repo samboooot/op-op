@@ -61,6 +61,11 @@ class OpinionTradeClient:
         headers["Authorization"] = f"Bearer {self.auth_token}"
         return headers
     
+    def update_auth_token(self, new_token: str):
+        """Update auth token dynamically (for long-running tasks)"""
+        self.auth_token = new_token
+        self.headers = self._get_headers()
+    
     # ==================== ORDER MANAGEMENT ====================
     
     def get_my_orders(
@@ -501,6 +506,195 @@ class OpinionTradeClient:
             raise Exception(f"API Error: {data.get('errmsg')}")
         
         return data.get("result", {}).get("list") or []
+    
+    # ==================== SPLIT/MERGE OPERATIONS ====================
+    
+    def get_safe_nonce(self) -> int:
+        """Get next nonce for Gnosis Safe"""
+        # BSC RPC endpoint
+        rpc_url = "https://bsc-dataseed.binance.org/"
+        
+        nonce_selector = "0xaffed0e0"
+        
+        payload = {
+            "jsonrpc": "2.0",
+            "method": "eth_call",
+            "params": [{
+                "to": self.multisig_address.lower(),
+                "data": nonce_selector
+            }, "latest"],
+            "id": 1
+        }
+        
+        response = requests.post(rpc_url, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        if "error" in data:
+            raise Exception(f"RPC Error: {data['error']}")
+        
+        # Parse hex
+        result = data.get("result", "0x0")
+        return int(result, 16)
+    
+    def get_condition_id(self, topic_id: int) -> str:
+        """Get conditionId for a market (needed for split)"""
+        url = f"{API_BASE}/v1/topic/topic/remain/token"
+        params = {"topic_id": topic_id, "chainId": CHAIN_ID}
+        
+        response = requests.get(url, headers=self.headers, params=params, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("errno") != 0:
+            raise Exception(f"API Error: {data.get('errmsg')}")
+        
+        result = data.get("result", {})
+        return result.get("conditionId") or result.get("questionId")
+    
+    def _create_safe_signature(
+        self,
+        to_address: str,
+        data: str,
+        nonce: int,
+        safe_tx_gas: int = 99999
+    ) -> str:
+        """Create EIP-712 signature for Gnosis Safe transaction"""
+        
+        safe_types = {
+            "EIP712Domain": [
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"},
+            ],
+            "SafeTx": [
+                {"name": "to", "type": "address"},
+                {"name": "value", "type": "uint256"},
+                {"name": "data", "type": "bytes"},
+                {"name": "operation", "type": "uint8"},
+                {"name": "safeTxGas", "type": "uint256"},
+                {"name": "baseGas", "type": "uint256"},
+                {"name": "gasPrice", "type": "uint256"},
+                {"name": "gasToken", "type": "address"},
+                {"name": "refundReceiver", "type": "address"},
+                {"name": "nonce", "type": "uint256"},
+            ]
+        }
+        
+        safe_domain = {
+            "chainId": CHAIN_ID,
+            "verifyingContract": self.multisig_address.lower()
+        }
+        
+        message = {
+            "to": to_address.lower(),
+            "value": 0,
+            "data": bytes.fromhex(data[2:]) if data.startswith("0x") else bytes.fromhex(data),
+            "operation": 0,
+            "safeTxGas": safe_tx_gas,
+            "baseGas": 0,
+            "gasPrice": 0,
+            "gasToken": "0x0000000000000000000000000000000000000000",
+            "refundReceiver": "0x0000000000000000000000000000000000000000",
+            "nonce": nonce,
+        }
+        
+        signable = encode_typed_data(
+            domain_data=safe_domain,
+            message_types={"SafeTx": safe_types["SafeTx"]},
+            message_data=message
+        )
+        
+        account = Account.from_key(self.private_key)
+        signed = account.sign_message(signable)
+        
+        return "0x" + signed.signature.hex()
+    
+    def split_shares(self, topic_id: int, amount_usdt: float, condition_id: str) -> Dict:
+        """
+        Execute Split: convert USDT to YES + NO shares
+        
+        Args:
+            topic_id: Child topic ID (market ID)
+            amount_usdt: Amount of USDT to split
+            condition_id: The conditionId from outcome object
+            
+        Returns:
+            Transaction result
+        """
+        # Contract addresses
+        SPLIT_CONTRACT = "0xAD1a38cEc043e70E83a3eC30443dB285ED10D774"
+        USDT_CONTRACT = "0x55d398326f99059fF775485246999027B3197955"
+        
+        if not condition_id:
+            raise Exception("conditionId is required for split")
+        
+        # Get next nonce
+        nonce = self.get_safe_nonce()
+        
+        # Amount in wei (18 decimals)
+        amount_wei = int(amount_usdt * 10**18)
+        
+        # Build function call data
+        # Function: splitPosition(address,bytes32,bytes32,uint256[],uint256)
+        # Selector: 0x72ce4275
+        
+        # Encode parameters
+        usdt_padded = USDT_CONTRACT[2:].lower().zfill(64)
+        parent_collection = "00" * 32  # bytes32(0)
+        condition_padded = condition_id[2:] if condition_id.startswith("0x") else condition_id
+        
+        # Array offset and values
+        array_offset = "00" * 31 + "a0"  # offset to array = 160
+        amount_hex = hex(amount_wei)[2:].zfill(64)
+        array_length = "00" * 31 + "02"  # 2 elements
+        outcome_1 = "00" * 31 + "01"  # outcome index 1
+        outcome_2 = "00" * 31 + "02"  # outcome index 2
+        
+        data = (
+            "0x72ce4275" +
+            usdt_padded +
+            parent_collection +
+            condition_padded +
+            array_offset +
+            amount_hex +
+            array_length +
+            outcome_1 +
+            outcome_2
+        )
+        
+        # Create signature
+        signature = self._create_safe_signature(SPLIT_CONTRACT, data, nonce)
+        
+        # Remove 0x prefix from data and signatures (required by API)
+        data_hex = data[2:] if data.startswith("0x") else data
+        sig_hex = signature[2:] if signature.startswith("0x") else signature
+        
+        # Build request payload
+        payload = {
+            "base_gas": "0",
+            "data": data_hex,
+            "gas_price": "0",
+            "gas_token": "0x0000000000000000000000000000000000000000",
+            "nonce": str(nonce),
+            "operation": 0,
+            "refund_receiver": "0x0000000000000000000000000000000000000000",
+            "safe_tx_gas": "99999",
+            "to_address": SPLIT_CONTRACT,
+            "value": "0",
+            "signatures": sig_hex,
+            "chainId": CHAIN_ID
+        }
+        
+        # Send transaction
+        url = f"{API_BASE}/v2/gnosis_safe/{self.multisig_address.lower()}/tx"
+        response = requests.post(url, headers=self.headers, json=payload, timeout=60)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get("errno") != 0:
+            raise Exception(f"Split failed: {data.get('errmsg')}")
+        
+        return data.get("result", {})
 
 
 # ==================== CLI for testing ====================

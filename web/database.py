@@ -1,5 +1,7 @@
 """
-SQLite (trades, tasks, logs)
+Opinion.trade Dashboard - Database Module
+
+SQLite database for storing trades and task history.
 """
 
 import sqlite3
@@ -12,7 +14,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'trades.db')
 
 
 def init_db():
-    """Initialize database"""
+    """Initialize database with tables"""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     
     with get_connection() as conn:
